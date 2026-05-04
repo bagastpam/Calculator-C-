@@ -3,7 +3,7 @@
 PROGRAM: CALCULATOR PRO++ (FULL SCIENTIFIC CALCULATOR)
 AUTHOR: [Your Name]
 DESCRIPTION: Kalkulator ilmiah lengkap dengan berbagai fungsi
-             matematika, history, dan export file
+             matematika, history, export file, dan expression parser
 ================================================================
 */
 
@@ -15,6 +15,10 @@ DESCRIPTION: Kalkulator ilmiah lengkap dengan berbagai fungsi
 #include <limits>
 #include <algorithm>
 #include <cstdlib>
+#include <sstream>
+#include <cctype>
+#include <map>
+#include <functional>
 
 using namespace std;
 
@@ -25,6 +29,223 @@ Fungsi: Menyimpan struktur data untuk riwayat perhitungan
 */
 struct History {
     string deskripsi; // Menyimpan deskripsi perhitungan
+};
+
+// ================== EXPRESSION PARSER CLASS ==================
+/*
+CLASS: ExpressionParser
+DESKRIPSI: Mem-parsing dan mengevaluasi ekspresi matematika
+            Contoh: "6 * 10 + 20 * cos(43)"
+*/
+class ExpressionParser {
+private:
+    string expr;
+    size_t pos;
+    bool degreeMode; // true = degree, false = radian
+    
+    // Token saat ini
+    char current() {
+        if (pos >= expr.length()) return '\0';
+        return expr[pos];
+    }
+    
+    // Maju ke token berikutnya
+    void advance() {
+        pos++;
+        skipWhitespace();
+    }
+    
+    // Skip spasi
+    void skipWhitespace() {
+        while (pos < expr.length() && isspace(expr[pos])) pos++;
+    }
+    
+    // Parse angka (bisa desimal)
+    double parseNumber() {
+        size_t start = pos;
+        while (pos < expr.length() && (isdigit(expr[pos]) || expr[pos] == '.')) {
+            pos++;
+        }
+        string numStr = expr.substr(start, pos - start);
+        skipWhitespace();
+        return stod(numStr);
+    }
+    
+    // Parse fungsi (sin, cos, tan, dll)
+    double parseFunction() {
+        size_t start = pos;
+        while (pos < expr.length() && isalpha(expr[pos])) {
+            pos++;
+        }
+        string funcName = expr.substr(start, pos - start);
+        
+        // Pastikan ada '(' setelah nama fungsi
+        if (current() != '(') {
+            throw runtime_error("Expected '(' after function: " + funcName);
+        }
+        advance(); // skip '('
+        
+        double arg = parseExpression();
+        
+        if (current() != ')') {
+            throw runtime_error("Expected ')' after function argument");
+        }
+        advance(); // skip ')'
+        
+        // Evaluasi fungsi
+        if (funcName == "sin") {
+            if (degreeMode) return sin(arg * M_PI / 180.0);
+            return sin(arg);
+        }
+        if (funcName == "cos") {
+            if (degreeMode) return cos(arg * M_PI / 180.0);
+            return cos(arg);
+        }
+        if (funcName == "tan") {
+            if (degreeMode) return tan(arg * M_PI / 180.0);
+            return tan(arg);
+        }
+        if (funcName == "asin") {
+            double rad = asin(arg);
+            if (degreeMode) return rad * 180.0 / M_PI;
+            return rad;
+        }
+        if (funcName == "acos") {
+            double rad = acos(arg);
+            if (degreeMode) return rad * 180.0 / M_PI;
+            return rad;
+        }
+        if (funcName == "atan") {
+            double rad = atan(arg);
+            if (degreeMode) return rad * 180.0 / M_PI;
+            return rad;
+        }
+        if (funcName == "sinh") return sinh(arg);
+        if (funcName == "cosh") return cosh(arg);
+        if (funcName == "tanh") return tanh(arg);
+        if (funcName == "log") return log10(arg);
+        if (funcName == "ln") return log(arg);
+        if (funcName == "sqrt") return sqrt(arg);
+        if (funcName == "cbrt") return cbrt(arg);
+        if (funcName == "abs") return fabs(arg);
+        if (funcName == "exp") return exp(arg);
+        if (funcName == "pi") return M_PI;
+        if (funcName == "e") return M_E;
+        
+        throw runtime_error("Unknown function: " + funcName);
+    }
+    
+    // Parse faktor (angka, fungsi, atau ekspresi dalam kurung)
+    double parseFactor() {
+        skipWhitespace();
+        
+        if (current() == '(') {
+            advance(); // skip '('
+            double result = parseExpression();
+            if (current() != ')') {
+                throw runtime_error("Mismatched parentheses");
+            }
+            advance(); // skip ')'
+            return result;
+        }
+        else if (isdigit(current()) || current() == '.') {
+            return parseNumber();
+        }
+        else if (isalpha(current())) {
+            return parseFunction();
+        }
+        else if (current() == '-') {
+            advance();
+            return -parseFactor();
+        }
+        else if (current() == '+') {
+            advance();
+            return parseFactor();
+        }
+        
+        throw runtime_error("Unexpected character");
+        return 0;
+    }
+    
+    // Parse pangkat (^)
+    double parsePower() {
+        double result = parseFactor();
+        
+        while (current() == '^') {
+            advance();
+            double exponent = parseFactor();
+            result = pow(result, exponent);
+        }
+        
+        return result;
+    }
+    
+    // Parse perkalian dan pembagian (*, /)
+    double parseTerm() {
+        double result = parsePower();
+        
+        while (current() == '*' || current() == '/') {
+            char op = current();
+            advance();
+            double right = parsePower();
+            
+            if (op == '*') result *= right;
+            else if (op == '/') {
+                if (right == 0) throw runtime_error("Division by zero");
+                result /= right;
+            }
+        }
+        
+        return result;
+    }
+    
+    // Parse penjumlahan dan pengurangan (+, -)
+    double parseExpression() {
+        double result = parseTerm();
+        
+        while (current() == '+' || current() == '-') {
+            char op = current();
+            advance();
+            double right = parseTerm();
+            
+            if (op == '+') result += right;
+            else if (op == '-') result -= right;
+        }
+        
+        return result;
+    }
+    
+public:
+    // Constructor
+    ExpressionParser() {
+        pos = 0;
+        degreeMode = true; // Default degree
+    }
+    
+    // Set mode sudut
+    void setDegreeMode(bool mode) {
+        degreeMode = mode;
+    }
+    
+    // Fungsi utama untuk mengevaluasi ekspresi
+    double evaluate(const string& expression) {
+        expr = expression;
+        pos = 0;
+        skipWhitespace();
+        
+        if (expr.empty()) {
+            throw runtime_error("Empty expression");
+        }
+        
+        double result = parseExpression();
+        
+        // Pastikan semua karakter sudah diproses
+        if (pos < expr.length()) {
+            throw runtime_error("Unexpected characters at end");
+        }
+        
+        return result;
+    }
 };
 
 // ================== FUNGSI OPERASI DASAR ==================
@@ -162,7 +383,6 @@ DESKRIPSI: Menghitung sin, cos, tan dengan output degree dan radian
 */
 void prosesTrigonometriDasar(string menu, double angka) {
     double hasilDegree, hasilRadian;
-    bool valid = true;
     
     if (menu == "sin") {
         hasilDegree = sin(konversiDerajatKeRadian(angka));
@@ -181,9 +401,6 @@ void prosesTrigonometriDasar(string menu, double angka) {
         hasilRadian = tan(angka);
         cout << "Hasil tan(" << angka << "°) = " << hasilDegree << endl;
         cout << "Hasil tan(" << angka << " rad) = " << hasilRadian << endl;
-    }
-    else {
-        valid = false;
     }
 }
 
@@ -278,22 +495,18 @@ void prosesAkarPangkat(string menu, double angka) {
         }
         double hasil = sqrt(angka);
         cout << "Hasil sqrt(" << angka << ") = " << hasil << endl;
-        cout << "atau v" << angka << " = " << hasil << endl;
     }
     else if (menu == "cbrt") {
         double hasil = cbrt(angka);
         cout << "Hasil cbrt(" << angka << ") = " << hasil << endl;
-        cout << "atau ?" << angka << " = " << hasil << endl;
     }
     else if (menu == "pangkat2" || menu == "^2") {
         double hasil = angka * angka;
         cout << "Hasil " << angka << "^2 = " << hasil << endl;
-        cout << "atau " << angka << "² = " << hasil << endl;
     }
     else if (menu == "pangkat3" || menu == "^3") {
         double hasil = angka * angka * angka;
         cout << "Hasil " << angka << "^3 = " << hasil << endl;
-        cout << "atau " << angka << "³ = " << hasil << endl;
     }
 }
 
@@ -350,7 +563,7 @@ DESKRIPSI: Menampilkan nilai konstanta matematika
 void tampilkanKonstanta(string menu) {
     cout << fixed << setprecision(15);
     
-    if (menu == "pi" || menu == "p") {
+    if (menu == "pi" || menu == "p" || menu == "p") {
         cout << "Nilai p (PI) = " << M_PI << endl;
     }
     else if (menu == "e") {
@@ -437,7 +650,7 @@ void exportHistoryToFile(const vector<History> &histories) {
     file << "========================================" << endl;
     
     file.close();
-    cout << "? History berhasil diekspor ke " << filename << endl;
+    cout << "History berhasil diekspor ke " << filename << endl;
 }
 
 /*
@@ -448,15 +661,15 @@ DESKRIPSI: Menghapus semua history dengan konfirmasi
 */
 void hapusHistory(vector<History> &histories) {
     char confirm;
-    cout << "??  Apakah Anda yakin ingin menghapus SEMUA history? (y/n): ";
+    cout << "Apakah Anda yakin ingin menghapus SEMUA history? (y/n): ";
     cin >> confirm;
     
     if (confirm == 'y' || confirm == 'Y') {
         histories.clear();
         saveHistory(histories);
-        cout << "? History berhasil dihapus!" << endl;
+        cout << "History berhasil dihapus!" << endl;
     } else {
-        cout << "? Penghapusan dibatalkan." << endl;
+        cout << "Penghapusan dibatalkan." << endl;
     }
 }
 
@@ -470,11 +683,11 @@ void tampilkanHistory(const vector<History> &histories) {
     cout << "\n=== HISTORY PERHITUNGAN ===" << endl;
     
     if (histories.empty()) {
-        cout << "?? History kosong. Belum ada perhitungan." << endl;
+        cout << "History kosong. Belum ada perhitungan." << endl;
         return;
     }
     
-    cout << "?? Total " << histories.size() << " riwayat perhitungan:" << endl;
+    cout << "Total " << histories.size() << " riwayat perhitungan:" << endl;
     cout << "----------------------------------------" << endl;
     
     for (size_t i = 0; i < histories.size(); i++) {
@@ -504,10 +717,11 @@ void tampilkanMenuUtama() {
     cout << " 7. Pembulatan (ceil, floor, round)    " << endl;
     cout << " 8. Fungsi Lain (abs, exp, faktorial)  " << endl;
     cout << " 9. Konstanta (pi, e)                  " << endl;
-    cout << "10. Lihat History                      " << endl;
-    cout << "11. Hapus History                      " << endl;
-    cout << "12. Export History ke File             " << endl;
-    cout << "13. Keluar                             " << endl;
+    cout << "10. Kalkulator Ekspresi (6*10+20*cos43)" << endl;
+    cout << "11. Lihat History                      " << endl;
+    cout << "12. Hapus History                      " << endl;
+    cout << "13. Export History ke File             " << endl;
+    cout << "14. Keluar                             " << endl;
     cout << "========================================" << endl;
 }
 
@@ -521,6 +735,7 @@ DESKRIPSI: Fungsi utama program kalkulator
 int main() {
     vector<History> histories;  // Menyimpan riwayat perhitungan
     int pilihan;                // Menyimpan pilihan menu
+    ExpressionParser parser;    // Parser untuk ekspresi matematika
     
     // Load history dari file saat program dimulai
     loadHistory(histories);
@@ -537,7 +752,7 @@ int main() {
     // Loop utama program
     do {
         tampilkanMenuUtama();
-        pilihan = getValidMenu(1, 13);
+        pilihan = getValidMenu(1, 14);
         
         // ========== MENU 1: OPERASI DASAR ==========
         if (pilihan == 1) {
@@ -554,7 +769,7 @@ int main() {
             
             if (valid) {
                 string record = to_string(a) + " " + op + " " + to_string(b) + " = " + to_string(hasil);
-                cout << "\n? Hasil: " << hasil << endl;
+                cout << "\nHasil: " << hasil << endl;
                 histories.push_back({record});
                 saveHistory(histories);
             }
@@ -578,7 +793,7 @@ int main() {
                 histories.push_back({record});
                 saveHistory(histories);
             } else {
-                cout << "? Fungsi tidak dikenal!" << endl;
+                cout << "Fungsi tidak dikenal!" << endl;
             }
         }
         
@@ -600,7 +815,7 @@ int main() {
                 histories.push_back({record});
                 saveHistory(histories);
             } else {
-                cout << "? Fungsi tidak dikenal!" << endl;
+                cout << "Fungsi tidak dikenal!" << endl;
             }
         }
         
@@ -622,7 +837,7 @@ int main() {
                 histories.push_back({record});
                 saveHistory(histories);
             } else {
-                cout << "? Fungsi tidak dikenal!" << endl;
+                cout << "Fungsi tidak dikenal!" << endl;
             }
         }
         
@@ -644,7 +859,7 @@ int main() {
                 histories.push_back({record});
                 saveHistory(histories);
             } else {
-                cout << "? Fungsi tidak dikenal!" << endl;
+                cout << "Fungsi tidak dikenal!" << endl;
             }
         }
         
@@ -654,7 +869,7 @@ int main() {
             double angka;
             
             cout << "\n--- AKAR & PANGKAT ---" << endl;
-            cout << "Fungsi: sqrt (v), cbrt (?), pangkat2 (^2), pangkat3 (^2)" << endl;
+            cout << "Fungsi: sqrt, cbrt, pangkat2, pangkat3" << endl;
             menu = getValidString("Pilih fungsi: ");
             
             if (menu == "sqrt" || menu == "cbrt" || menu == "pangkat2" || menu == "pangkat3") {
@@ -666,7 +881,7 @@ int main() {
                 histories.push_back({record});
                 saveHistory(histories);
             } else {
-                cout << "? Fungsi tidak dikenal!" << endl;
+                cout << "Fungsi tidak dikenal!" << endl;
             }
         }
         
@@ -688,7 +903,7 @@ int main() {
                 histories.push_back({record});
                 saveHistory(histories);
             } else {
-                cout << "? Fungsi tidak dikenal!" << endl;
+                cout << "Fungsi tidak dikenal!" << endl;
             }
         }
         
@@ -722,7 +937,7 @@ int main() {
                 }
             }
             else {
-                cout << "? Fungsi tidak dikenal!" << endl;
+                cout << "Fungsi tidak dikenal!" << endl;
             }
         }
         
@@ -731,7 +946,7 @@ int main() {
             string menu;
             
             cout << "\n--- KONSTANTA MATEMATIKA ---" << endl;
-            cout << "Konstanta: pi, p, e" << endl;
+            cout << "Konstanta: pi, e" << endl;
             menu = getValidString("Pilih konstanta: ");
             
             tampilkanKonstanta(menu);
@@ -741,31 +956,86 @@ int main() {
             saveHistory(histories);
         }
         
-        // ========== MENU 10: LIHAT HISTORY ==========
+        // ========== MENU 10: KALKULATOR EKSPRESI ==========
         else if (pilihan == 10) {
+            string ekspresi;
+            int modePilihan;
+            
+            cout << "\n--- KALKULATOR EKSPRESI ---" << endl;
+            cout << "Contoh ekspresi yang bisa dihitung:" << endl;
+            cout << "  - 6 * 10 + 20 * cos(43)" << endl;
+            cout << "  - (2 + 3) * 4 ^ 2" << endl;
+            cout << "  - sin(30) + cos(60)" << endl;
+            cout << "  - sqrt(16) + log(100)" << endl;
+            cout << endl;
+            cout << "Fungsi yang didukung:" << endl;
+            cout << "  sin, cos, tan, asin, acos, atan" << endl;
+            cout << "  sinh, cosh, tanh, sqrt, cbrt" << endl;
+            cout << "  log, ln, abs, exp, pi, e" << endl;
+            cout << endl;
+            
+            cout << "Pilih mode sudut untuk trigonometri:" << endl;
+            cout << "  1. Degree (derajat)" << endl;
+            cout << "  2. Radian" << endl;
+            cout << "Pilih (1-2): ";
+            cin >> modePilihan;
+            
+            if (modePilihan == 1) {
+                parser.setDegreeMode(true);
+                cout << "Mode: DEGREE" << endl;
+            } else {
+                parser.setDegreeMode(false);
+                cout << "Mode: RADIAN" << endl;
+            }
+            
+            cin.ignore(); // Bersihkan buffer
+            cout << "\nMasukkan ekspresi matematika: ";
+            getline(cin, ekspresi);
+            
+            try {
+                double hasil = parser.evaluate(ekspresi);
+                cout << "\nHasil: " << fixed << setprecision(8) << hasil << endl;
+                
+                // Simpan ke history
+                string modeStr = (modePilihan == 1) ? "deg" : "rad";
+                string record = "Ekspresi [" + modeStr + "]: " + ekspresi + " = " + to_string(hasil);
+                histories.push_back({record});
+                saveHistory(histories);
+            }
+            catch (const exception& e) {
+                cout << "Error: " << e.what() << endl;
+                cout << "\nTips:" << endl;
+                cout << "  - Pastikan tanda kurung seimbang" << endl;
+                cout << "  - Gunakan * untuk perkalian" << endl;
+                cout << "  - Fungsi harus diikuti tanda kurung: sin(30)" << endl;
+            }
+        }
+        
+        // ========== MENU 11: LIHAT HISTORY ==========
+        else if (pilihan == 11) {
             tampilkanHistory(histories);
         }
         
-        // ========== MENU 11: HAPUS HISTORY ==========
-        else if (pilihan == 11) {
+        // ========== MENU 12: HAPUS HISTORY ==========
+        else if (pilihan == 12) {
             hapusHistory(histories);
         }
         
-        // ========== MENU 12: EXPORT HISTORY ==========
-        else if (pilihan == 12) {
+        // ========== MENU 13: EXPORT HISTORY ==========
+        else if (pilihan == 13) {
             if (histories.empty()) {
-                cout << "?? Tidak ada history untuk diekspor!" << endl;
+                cout << "Tidak ada history untuk diekspor!" << endl;
             } else {
                 exportHistoryToFile(histories);
             }
         }
         
-        // ========== MENU 13: KELUAR ==========
-        else if (pilihan == 13) {
+        // ========== MENU 14: KELUAR ==========
+        else if (pilihan == 14) {
             cout << "\n==========================================" << endl;
             cout << "   Terima kasih telah menggunakan" << endl;
             cout << "   CALCULATOR PRO++!" << endl;
-            cout << "   Sampai jumpa lagi! ??" << endl;
+            cout << "   Sampai jumpa lagi!" << endl;
             cout << "==========================================" << endl;
             break;
         }
